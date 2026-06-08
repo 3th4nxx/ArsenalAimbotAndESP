@@ -1,0 +1,797 @@
+-- OwnerPanel.lua
+-- LocalScript → StarterPlayerScripts
+-- HTTP Requests must be ON: Game Settings > Security > Allow HTTP Requests
+
+local Players          = game:GetService("Players")
+local Teams            = game:GetService("Teams")
+local RunService       = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local LocalPlayer      = Players.LocalPlayer
+local Camera           = workspace.CurrentCamera
+
+-- ============================================================
+--  !! YOUR ROBLOX USER ID !!
+-- ============================================================
+local OWNER_USER_ID = 3024768234
+
+if LocalPlayer.UserId ~= OWNER_USER_ID then return end
+
+-- ============================================================
+--  LOAD RAYFIELD
+-- ============================================================
+local Rayfield
+local ok, err = pcall(function()
+    Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
+end)
+if not ok or not Rayfield then
+    warn("[OwnerPanel] Failed to load Rayfield: " .. tostring(err))
+    return
+end
+
+-- ============================================================
+--  WINDOW
+-- ============================================================
+local Window = Rayfield:CreateWindow({
+    Name                   = "Owner Panel",
+    LoadingTitle           = "Owner Tools",
+    LoadingSubtitle        = "by " .. LocalPlayer.Name,
+    Theme                  = "Default",
+    DisableRayfieldPrompts = true,
+    DisableBuildWarnings   = true,
+})
+
+-- ============================================================
+--  STATE
+-- ============================================================
+local highlights   = {}
+local fillColor    = Color3.fromRGB(255, 100, 0)
+local outlineColor = Color3.fromRGB(255, 255, 255)
+local fillTrans    = 0.5
+local outlineTrans = 0
+
+-- ============================================================
+--  TEAM HELPERS
+-- ============================================================
+local function getOwnerTeam()
+    if LocalPlayer.Team then return LocalPlayer.Team end
+    for _, team in ipairs(Teams:GetTeams()) do
+        for _, p in ipairs(team:GetPlayers()) do
+            if p == LocalPlayer then return team end
+        end
+    end
+    return nil
+end
+
+local function isEnemy(player)
+    if player == LocalPlayer then return false end
+    local myTeam = getOwnerTeam()
+    if not myTeam then return true end
+    return player.Team ~= myTeam
+end
+
+-- ============================================================
+--  HIGHLIGHT HELPERS
+-- ============================================================
+local function applyHighlight(player, char)
+    local hl = Instance.new("Highlight")
+    hl.FillColor           = fillColor
+    hl.OutlineColor        = outlineColor
+    hl.FillTransparency    = fillTrans
+    hl.OutlineTransparency = outlineTrans
+    hl.DepthMode           = Enum.HighlightDepthMode.AlwaysOnTop
+    hl.Adornee             = char
+    hl.Parent              = char
+    highlights[player.Name] = hl
+end
+
+local function addHighlight(player)
+    if highlights[player.Name] then
+        pcall(function() highlights[player.Name]:Destroy() end)
+        highlights[player.Name] = nil
+    end
+    local char = player.Character
+    if char then applyHighlight(player, char) end
+    player.CharacterAdded:Connect(function(newChar)
+        task.wait()
+        if isEnemy(player) then
+            applyHighlight(player, newChar)
+        end
+    end)
+end
+
+local function removeHighlight(player)
+    if highlights[player.Name] then
+        pcall(function() highlights[player.Name]:Destroy() end)
+        highlights[player.Name] = nil
+    end
+end
+
+local function refreshColors()
+    for _, hl in pairs(highlights) do
+        pcall(function()
+            hl.FillColor           = fillColor
+            hl.OutlineColor        = outlineColor
+            hl.FillTransparency    = fillTrans
+            hl.OutlineTransparency = outlineTrans
+        end)
+    end
+end
+
+Players.PlayerRemoving:Connect(function(p) highlights[p.Name] = nil end)
+
+local function getPlayerNames()
+    local names = {}
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p.UserId ~= OWNER_USER_ID then
+            table.insert(names, p.Name)
+        end
+    end
+    return #names > 0 and names or {"(No other players)"}
+end
+
+-- ============================================================
+--  TAB 1 — HIGHLIGHT
+-- ============================================================
+local HighlightTab = Window:CreateTab("Highlight", 4483362458)
+
+HighlightTab:CreateSection("Select Player")
+
+local playerDropdown = HighlightTab:CreateDropdown({
+    Name            = "Choose Player",
+    Options         = getPlayerNames(),
+    CurrentOption   = {getPlayerNames()[1]},
+    MultipleOptions = false,
+    Flag            = "SelectedPlayer",
+    Callback        = function() end,
+})
+
+HighlightTab:CreateButton({
+    Name     = "🔄  Refresh Player List",
+    Callback = function()
+        playerDropdown:Refresh(getPlayerNames(), false)
+        Rayfield:Notify({ Title = "Refreshed", Content = "Player list updated.", Duration = 3 })
+    end,
+})
+
+HighlightTab:CreateSection("Manual Actions")
+
+HighlightTab:CreateButton({
+    Name     = "✅  Highlight Selected",
+    Callback = function()
+        local sel = Rayfield.Flags["SelectedPlayer"]
+        if not sel or sel == "(No other players)" then
+            Rayfield:Notify({ Title = "No Player", Content = "Pick a player first.", Duration = 3 })
+            return
+        end
+        local target = Players:FindFirstChild(sel)
+        if not target then
+            Rayfield:Notify({ Title = "Not Found", Content = sel .. " may have left.", Duration = 3 })
+            return
+        end
+        if not isEnemy(target) then
+            Rayfield:Notify({ Title = "Teammate", Content = sel .. " is on your team. Skipped.", Duration = 3 })
+            return
+        end
+        addHighlight(target)
+        Rayfield:Notify({ Title = "Highlighted", Content = sel .. " highlighted.", Duration = 3 })
+    end,
+})
+
+HighlightTab:CreateButton({
+    Name     = "❌  Remove Highlight from Selected",
+    Callback = function()
+        local sel = Rayfield.Flags["SelectedPlayer"]
+        if not sel then return end
+        local target = Players:FindFirstChild(sel)
+        if target then
+            removeHighlight(target)
+            Rayfield:Notify({ Title = "Removed", Content = sel .. "'s highlight removed.", Duration = 3 })
+        end
+    end,
+})
+
+HighlightTab:CreateButton({
+    Name     = "🌟  Highlight ALL Enemies",
+    Callback = function()
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p.UserId ~= OWNER_USER_ID then
+                if isEnemy(p) then
+                    addHighlight(p)
+                else
+                    removeHighlight(p)
+                end
+            end
+        end
+        Rayfield:Notify({ Title = "Done", Content = "Only enemies highlighted. Teammates skipped.", Duration = 3 })
+    end,
+})
+
+HighlightTab:CreateButton({
+    Name     = "🗑️  Remove ALL Highlights",
+    Callback = function()
+        for _, p in ipairs(Players:GetPlayers()) do removeHighlight(p) end
+        Rayfield:Notify({ Title = "Cleared", Content = "All highlights removed.", Duration = 3 })
+    end,
+})
+
+-- ============================================================
+--  TAB 2 — TEAM DETECTOR
+-- ============================================================
+local TeamTab = Window:CreateTab("Team Detector", 4483362458)
+
+TeamTab:CreateSection("Auto-Highlight Enemies")
+
+TeamTab:CreateParagraph({
+    Title   = "How it works",
+    Content = "Highlights every player NOT on your team. Teammates are skipped.",
+})
+
+TeamTab:CreateButton({
+    Name     = "🎯  Highlight Enemies",
+    Callback = function()
+        local myTeam = getOwnerTeam()
+        local count  = 0
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p == LocalPlayer then continue end
+            if isEnemy(p) then
+                addHighlight(p)
+                count += 1
+            else
+                removeHighlight(p)
+            end
+        end
+        Rayfield:Notify({
+            Title   = "Team: " .. (myTeam and myTeam.Name or "None"),
+            Content = count .. " enem" .. (count == 1 and "y" or "ies") .. " highlighted.",
+            Duration = 5,
+        })
+    end,
+})
+
+TeamTab:CreateButton({
+    Name     = "🔁  Re-scan Teams",
+    Callback = function()
+        local added, removed = 0, 0
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p.UserId == OWNER_USER_ID then continue end
+            if isEnemy(p) then
+                if not highlights[p.Name] then addHighlight(p) added += 1 end
+            else
+                if highlights[p.Name] then removeHighlight(p) removed += 1 end
+            end
+        end
+        Rayfield:Notify({
+            Title   = "Re-scanned",
+            Content = "+" .. added .. " highlighted, -" .. removed .. " removed.",
+            Duration = 4,
+        })
+    end,
+})
+
+TeamTab:CreateButton({
+    Name     = "📋  Show My Team",
+    Callback = function()
+        local myTeam = getOwnerTeam()
+        local teammates = {}
+        if myTeam then
+            for _, p in ipairs(Players:GetPlayers()) do
+                if p.Team == myTeam and p.UserId ~= OWNER_USER_ID then
+                    table.insert(teammates, p.Name)
+                end
+            end
+        end
+        Rayfield:Notify({
+            Title   = "Team: " .. (myTeam and myTeam.Name or "None"),
+            Content = "Teammates: " .. (#teammates > 0 and table.concat(teammates, ", ") or "None"),
+            Duration = 6,
+        })
+    end,
+})
+
+TeamTab:CreateButton({
+    Name     = "📊  List All Teams & Players",
+    Callback = function()
+        local lines = {}
+        for _, team in ipairs(Teams:GetTeams()) do
+            local members = {}
+            for _, p in ipairs(Players:GetPlayers()) do
+                if p.Team == team then table.insert(members, p.Name) end
+            end
+            table.insert(lines, team.Name .. ": " .. (#members > 0 and table.concat(members, ", ") or "empty"))
+        end
+        local noTeam = {}
+        for _, p in ipairs(Players:GetPlayers()) do
+            if not p.Team then table.insert(noTeam, p.Name) end
+        end
+        if #noTeam > 0 then
+            table.insert(lines, "No Team: " .. table.concat(noTeam, ", "))
+        end
+        Rayfield:Notify({
+            Title   = "All Teams",
+            Content = #lines > 0 and table.concat(lines, " | ") or "No teams found.",
+            Duration = 8,
+        })
+    end,
+})
+
+-- ============================================================
+--  TAB 3 — APPEARANCE
+-- ============================================================
+local AppearanceTab = Window:CreateTab("Appearance", 4483362458)
+
+AppearanceTab:CreateSection("Fill")
+
+AppearanceTab:CreateColorPicker({
+    Name     = "Fill Color",
+    Color    = fillColor,
+    Flag     = "FillColor",
+    Callback = function(c) fillColor = c refreshColors() end,
+})
+
+AppearanceTab:CreateSlider({
+    Name         = "Fill Transparency",
+    Range        = {0, 10},
+    Increment    = 1,
+    Suffix       = "/10",
+    CurrentValue = 5,
+    Flag         = "FillTrans",
+    Callback     = function(v) fillTrans = v / 10 refreshColors() end,
+})
+
+AppearanceTab:CreateSection("Outline")
+
+AppearanceTab:CreateColorPicker({
+    Name     = "Outline Color",
+    Color    = outlineColor,
+    Flag     = "OutlineColor",
+    Callback = function(c) outlineColor = c refreshColors() end,
+})
+
+AppearanceTab:CreateSlider({
+    Name         = "Outline Transparency",
+    Range        = {0, 10},
+    Increment    = 1,
+    Suffix       = "/10",
+    CurrentValue = 0,
+    Flag         = "OutlineTrans",
+    Callback     = function(v) outlineTrans = v / 10 refreshColors() end,
+})
+
+-- ============================================================
+--  TAB 4 — ESP BOXES
+-- ============================================================
+local espEnabled  = false
+local espBoxes    = {}
+local espColor    = Color3.fromRGB(255, 0, 0)
+local espShowName = true
+local espShowHP   = true
+
+local espGui = Instance.new("ScreenGui")
+espGui.Name           = "OwnerESP"
+espGui.ResetOnSpawn   = false
+espGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+espGui.Parent         = LocalPlayer.PlayerGui
+
+local function removeBox(player)
+    if espBoxes[player.Name] then
+        pcall(function() espBoxes[player.Name].frame:Destroy() end)
+        espBoxes[player.Name] = nil
+    end
+end
+
+local function createBox(player)
+    if player == LocalPlayer or espBoxes[player.Name] then return end
+
+    local frame = Instance.new("Frame")
+    frame.BackgroundTransparency = 1
+    frame.BorderSizePixel        = 0
+    frame.Size                   = UDim2.new(0, 50, 0, 80)
+    frame.Visible                = false
+    frame.Parent                 = espGui
+
+    local function makeLine(sX, sY, pX, pY)
+        local l = Instance.new("Frame")
+        l.BackgroundColor3 = espColor
+        l.BorderSizePixel  = 0
+        l.Size             = UDim2.new(sX, 2, sY, 2)
+        l.Position         = UDim2.new(pX, 0, pY, 0)
+        l.Parent           = frame
+    end
+
+    makeLine(1, 0, 0, 0) -- top
+    makeLine(1, 0, 0, 1) -- bottom
+    makeLine(0, 1, 0, 0) -- left
+    makeLine(0, 1, 1, 0) -- right
+
+    -- Fix line thickness
+    local children = frame:GetChildren()
+    -- top & bottom: full width, 2px tall
+    children[1].Size = UDim2.new(1, 0, 0, 2)
+    children[2].Size = UDim2.new(1, 0, 0, 2)
+    -- left & right: 2px wide, full height
+    children[3].Size = UDim2.new(0, 2, 1, 0)
+    children[4].Size = UDim2.new(0, 2, 1, 0)
+
+    local nameLabel = Instance.new("TextLabel")
+    nameLabel.BackgroundTransparency = 1
+    nameLabel.Size                   = UDim2.new(1, 0, 0, 14)
+    nameLabel.Position               = UDim2.new(0, 0, 0, -16)
+    nameLabel.TextColor3             = espColor
+    nameLabel.TextSize               = 13
+    nameLabel.Font                   = Enum.Font.GothamBold
+    nameLabel.Text                   = player.Name
+    nameLabel.TextStrokeTransparency = 0
+    nameLabel.Parent                 = frame
+
+    local hpLabel = Instance.new("TextLabel")
+    hpLabel.BackgroundTransparency = 1
+    hpLabel.Size                   = UDim2.new(1, 0, 0, 14)
+    hpLabel.Position               = UDim2.new(0, 0, 1, 2)
+    hpLabel.TextColor3             = Color3.fromRGB(100, 255, 100)
+    hpLabel.TextSize               = 12
+    hpLabel.Font                   = Enum.Font.Gotham
+    hpLabel.Text                   = "HP: ?"
+    hpLabel.TextStrokeTransparency = 0
+    hpLabel.Parent                 = frame
+
+    espBoxes[player.Name] = { frame = frame, nameLabel = nameLabel, hpLabel = hpLabel }
+end
+
+RunService.RenderStepped:Connect(function()
+    if not espEnabled then
+        for _, data in pairs(espBoxes) do
+            pcall(function() data.frame.Visible = false end)
+        end
+        return
+    end
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player == LocalPlayer then continue end
+
+        local data = espBoxes[player.Name]
+        if not data then continue end
+
+        -- Skip teammates
+        if not isEnemy(player) then
+            data.frame.Visible = false
+            continue
+        end
+
+        local char = player.Character
+        local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+        local hum  = char and char:FindFirstChildOfClass("Humanoid")
+
+        if not hrp then data.frame.Visible = false continue end
+
+        local head    = char:FindFirstChild("Head")
+        local topPart = head or hrp
+        local topPos  = topPart.Position + Vector3.new(0, topPart.Size.Y / 2 + 0.1, 0)
+        local botPos  = hrp.Position - Vector3.new(0, 3.2, 0)
+
+        local topScreen, topVis = Camera:WorldToViewportPoint(topPos)
+        local botScreen         = Camera:WorldToViewportPoint(botPos)
+
+        if not topVis or topScreen.Z < 0 then
+            data.frame.Visible = false
+            continue
+        end
+
+        local height = math.abs(botScreen.Y - topScreen.Y)
+        local width  = height * 0.55
+        local left   = topScreen.X - width / 2
+        local top    = topScreen.Y
+
+        data.frame.Visible  = true
+        data.frame.Position = UDim2.new(0, left, 0, top)
+        data.frame.Size     = UDim2.new(0, width, 0, height)
+
+        for _, child in ipairs(data.frame:GetChildren()) do
+            if child:IsA("Frame") then
+                child.BackgroundColor3 = espColor
+            end
+        end
+
+        data.nameLabel.Visible    = espShowName
+        data.nameLabel.Text       = player.Name
+        data.nameLabel.TextColor3 = espColor
+
+        data.hpLabel.Visible = espShowHP
+        if hum then
+            local pct = math.floor((hum.Health / hum.MaxHealth) * 100)
+            data.hpLabel.Text       = "HP: " .. pct .. "%"
+            data.hpLabel.TextColor3 = Color3.fromRGB(
+                math.floor(255 * (1 - hum.Health / hum.MaxHealth)),
+                math.floor(255 * (hum.Health / hum.MaxHealth)),
+                0
+            )
+        end
+    end
+end)
+
+for _, p in ipairs(Players:GetPlayers()) do createBox(p) end
+Players.PlayerAdded:Connect(createBox)
+Players.PlayerRemoving:Connect(removeBox)
+
+local ESPTab = Window:CreateTab("ESP Boxes", 4483362458)
+ESPTab:CreateSection("Toggle")
+
+ESPTab:CreateToggle({
+    Name = "Enable ESP Boxes", CurrentValue = false, Flag = "ESPEnabled",
+    Callback = function(val)
+        espEnabled = val
+        if not val then
+            for _, data in pairs(espBoxes) do
+                pcall(function() data.frame.Visible = false end)
+            end
+        end
+    end,
+})
+
+ESPTab:CreateToggle({
+    Name = "Show Player Names", CurrentValue = true, Flag = "ESPNames",
+    Callback = function(val) espShowName = val end,
+})
+
+ESPTab:CreateToggle({
+    Name = "Show Health", CurrentValue = true, Flag = "ESPHealth",
+    Callback = function(val) espShowHP = val end,
+})
+
+ESPTab:CreateSection("Box Color")
+
+ESPTab:CreateColorPicker({
+    Name = "Box Color", Color = espColor, Flag = "ESPColor",
+    Callback = function(c) espColor = c end,
+})
+
+-- ============================================================
+--  TAB 5 — FLY  (Q to toggle)
+-- ============================================================
+local FlyTab = Window:CreateTab("Fly", 4483362458)
+
+local flying    = false
+local flySpeed  = 50
+local bVelocity = nil
+local bGyro     = nil
+
+local function stopFly()
+    flying = false
+    if bVelocity then pcall(function() bVelocity:Destroy() end) bVelocity = nil end
+    if bGyro     then pcall(function() bGyro:Destroy()     end) bGyro     = nil end
+    local char = LocalPlayer.Character
+    local hum  = char and char:FindFirstChildOfClass("Humanoid")
+    if hum then hum.PlatformStand = false end
+end
+
+local function startFly()
+    local char = LocalPlayer.Character
+    local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+    local hum  = char and char:FindFirstChildOfClass("Humanoid")
+    if not hrp or not hum then return end
+
+    hum.PlatformStand = true
+
+    bGyro = Instance.new("BodyGyro")
+    bGyro.MaxTorque = Vector3.new(1e5, 1e5, 1e5)
+    bGyro.CFrame    = hrp.CFrame
+    bGyro.P         = 1e4
+    bGyro.Parent    = hrp
+
+    bVelocity = Instance.new("BodyVelocity")
+    bVelocity.MaxForce = Vector3.new(1e5, 1e5, 1e5)
+    bVelocity.Velocity = Vector3.zero
+    bVelocity.P        = 1e4
+    bVelocity.Parent   = hrp
+
+    flying = true
+end
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == Enum.KeyCode.Q then
+        if flying then
+            stopFly()
+            Rayfield:Notify({ Title = "Fly", Content = "Fly disabled.", Duration = 2 })
+        else
+            startFly()
+            Rayfield:Notify({ Title = "Fly", Content = "Fly enabled! WASD + Space/Shift to move.", Duration = 3 })
+        end
+    end
+end)
+
+RunService.Heartbeat:Connect(function()
+    if not flying or not bVelocity or not bGyro then return end
+    local char = LocalPlayer.Character
+    local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp or not bVelocity.Parent then stopFly() return end
+
+    local dir = Vector3.zero
+    if UserInputService:IsKeyDown(Enum.KeyCode.W)         then dir += Camera.CFrame.LookVector end
+    if UserInputService:IsKeyDown(Enum.KeyCode.S)         then dir -= Camera.CFrame.LookVector end
+    if UserInputService:IsKeyDown(Enum.KeyCode.A)         then dir -= Camera.CFrame.RightVector end
+    if UserInputService:IsKeyDown(Enum.KeyCode.D)         then dir += Camera.CFrame.RightVector end
+    if UserInputService:IsKeyDown(Enum.KeyCode.Space)     then dir += Vector3.new(0, 1, 0) end
+    if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then dir -= Vector3.new(0, 1, 0) end
+
+    bVelocity.Velocity = dir * flySpeed
+    bGyro.CFrame       = Camera.CFrame
+end)
+
+LocalPlayer.CharacterAdded:Connect(function()
+    flying    = false
+    bVelocity = nil
+    bGyro     = nil
+end)
+
+FlyTab:CreateSection("Controls")
+
+FlyTab:CreateParagraph({
+    Title   = "Keybind",
+    Content = "Press Q to toggle fly on/off.\nWASD = directions  |  Space = up  |  Shift = down",
+})
+
+FlyTab:CreateToggle({
+    Name         = "Enable Fly (or press Q)",
+    CurrentValue = false,
+    Flag         = "FlyToggle",
+    Callback     = function(val)
+        if val then startFly() else stopFly() end
+    end,
+})
+
+FlyTab:CreateSlider({
+    Name         = "Fly Speed",
+    Range        = {10, 300},
+    Increment    = 5,
+    CurrentValue = 50,
+    Flag         = "FlySpeed",
+    Callback     = function(val) flySpeed = val end,
+})
+
+-- ============================================================
+--  TAB 6 — AIMBOT
+-- ============================================================
+local AimbotTab = Window:CreateTab("Aimbot", 4483362458)
+
+local aimbotEnabled   = false
+local aimbotFOV       = 200
+local aimbotSmooth    = 0.15
+local aimbotTeamCheck = true
+
+local function getAimbotTarget()
+    local closest, closestDist = nil, aimbotFOV
+    local center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+
+    local rayParams = RaycastParams.new()
+    rayParams.FilterType = Enum.RaycastFilterType.Exclude
+
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p == LocalPlayer then continue end
+        if aimbotTeamCheck and not isEnemy(p) then continue end
+
+        local char = p.Character
+        local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+        local hum  = char and char:FindFirstChildOfClass("Humanoid")
+        if not hrp or not hum or hum.Health <= 0 then continue end
+
+        local aimPoint = hrp.Position + Vector3.new(0, 1.5, 0)
+
+        -- Build exclusion list: all player characters so we dont hit them as walls
+        local excludeList = {}
+        for _, pl in ipairs(Players:GetPlayers()) do
+            if pl.Character then
+                table.insert(excludeList, pl.Character)
+            end
+        end
+        rayParams.FilterDescendantsInstances = excludeList
+
+        -- Cast ray from camera position toward the target
+        local origin    = Camera.CFrame.Position
+        local direction = (aimPoint - origin)
+        local result    = workspace:Raycast(origin, direction, rayParams)
+
+        -- If raycast hit something before reaching the target, they're behind a wall
+        if result then
+            -- Something was hit before we reached the player → skip
+            continue
+        end
+
+        local screenPos, onScreen = Camera:WorldToViewportPoint(aimPoint)
+        if onScreen and screenPos.Z > 0 then
+            local dist = (Vector2.new(screenPos.X, screenPos.Y) - center).Magnitude
+            if dist < closestDist then
+                closestDist = dist
+                closest = hrp
+            end
+        end
+    end
+    return closest
+end
+
+local lastCFrame = nil
+
+RunService.RenderStepped:Connect(function()
+    if not aimbotEnabled then
+        lastCFrame = nil
+        return
+    end
+
+    if not UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
+        lastCFrame = nil
+        return
+    end
+
+    local target = getAimbotTarget()
+    if not target then return end
+
+    local aimPoint   = target.Position + Vector3.new(0, 1.5, 0)
+    local currentPos = Camera.CFrame.Position
+    local targetCF   = CFrame.new(currentPos, aimPoint)
+    local smoothed   = Camera.CFrame:Lerp(targetCF, aimbotSmooth)
+
+    Camera.CFrame     = smoothed
+    Camera.CameraType = Enum.CameraType.Custom
+end)
+
+AimbotTab:CreateSection("Settings")
+
+AimbotTab:CreateToggle({
+    Name = "Enable Aimbot", CurrentValue = false, Flag = "AimbotEnabled",
+    Callback = function(val)
+        aimbotEnabled = val
+        if not val then Camera.CameraType = Enum.CameraType.Custom end
+    end,
+})
+
+AimbotTab:CreateToggle({
+    Name = "Enemies Only (Team Check)", CurrentValue = true, Flag = "AimbotTeamCheck",
+    Callback = function(val) aimbotTeamCheck = val end,
+})
+
+AimbotTab:CreateSlider({
+    Name = "FOV Radius", Range = {50, 800}, Increment = 10, CurrentValue = 200,
+    Suffix = "px", Flag = "AimbotFOV",
+    Callback = function(val) aimbotFOV = val end,
+})
+
+AimbotTab:CreateSlider({
+    Name = "Smoothing", Range = {1, 20}, Increment = 1, CurrentValue = 3,
+    Suffix = "/20", Flag = "AimbotSmooth",
+    Callback = function(val) aimbotSmooth = val / 20 end,
+})
+
+AimbotTab:CreateParagraph({
+    Title   = "How to use",
+    Content = "Hold Right Click (RMB) to lock onto the nearest enemy within FOV. Release to restore normal camera. Tools and hands stay active.",
+})
+
+-- ============================================================
+--  TAB 7 — DESTROY UI
+-- ============================================================
+local DestroyTab = Window:CreateTab("Destroy UI", 4483362458)
+DestroyTab:CreateSection("Danger Zone")
+
+DestroyTab:CreateButton({
+    Name     = "💣  Destroy UI",
+    Callback = function()
+        espEnabled    = false
+        aimbotEnabled = false
+        stopFly()
+        Camera.CameraType = Enum.CameraType.Custom
+        for _, p in ipairs(Players:GetPlayers()) do
+            removeHighlight(p)
+            removeBox(p)
+        end
+        pcall(function() espGui:Destroy() end)
+        Rayfield:Destroy()
+    end,
+})
+
+-- ============================================================
+--  READY
+-- ============================================================
+Rayfield:Notify({
+    Title    = "Owner Panel Ready",
+    Content  = "Welcome, " .. LocalPlayer.Name .. "! Press Q to toggle fly.",
+    Duration = 5,
+})
