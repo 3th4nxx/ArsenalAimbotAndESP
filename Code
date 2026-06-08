@@ -25,9 +25,9 @@ end
 --  WINDOW
 -- ============================================================
 local Window = Rayfield:CreateWindow({
-    Name                   = "Owner Panel",
-    LoadingTitle           = "Owner Tools",
-    LoadingSubtitle        = "by " .. LocalPlayer.Name,
+    Name                   = "Aimbot and ESP Panel",
+    LoadingTitle           = "Aimbot",
+    LoadingSubtitle        = "by c2h6o"
     Theme                  = "Default",
     DisableRayfieldPrompts = true,
     DisableBuildWarnings   = true,
