@@ -1,7 +1,3 @@
--- OwnerPanel.lua
--- LocalScript → StarterPlayerScripts
--- HTTP Requests must be ON: Game Settings > Security > Allow HTTP Requests
-
 local Players          = game:GetService("Players")
 local Teams            = game:GetService("Teams")
 local RunService       = game:GetService("RunService")
@@ -9,10 +5,7 @@ local UserInputService = game:GetService("UserInputService")
 local LocalPlayer      = Players.LocalPlayer
 local Camera           = workspace.CurrentCamera
 
--- ============================================================
---  !! YOUR ROBLOX USER ID !!
--- ============================================================
-local OWNER_USER_ID = 3024768234
+local OWNER_USER_ID = 0 -- REPLACE FOR YOUR USERID
 
 if LocalPlayer.UserId ~= OWNER_USER_ID then return end
 
