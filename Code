@@ -2,16 +2,15 @@ local Players          = game:GetService("Players")
 local Teams            = game:GetService("Teams")
 local RunService       = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local TweenService     = game:GetService("TweenService")
 local LocalPlayer      = Players.LocalPlayer
 local Camera           = workspace.CurrentCamera
 
-local OWNER_USER_ID = 0 -- REPLACE FOR YOUR USERID
+local OWNER_USER_ID = LocalPlayer.UserId
+local DISCORD_TAG = "_c2h6o._"
 
 if LocalPlayer.UserId ~= OWNER_USER_ID then return end
 
--- ============================================================
---  LOAD RAYFIELD
--- ============================================================
 local Rayfield
 local ok, err = pcall(function()
     Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
@@ -21,30 +20,23 @@ if not ok or not Rayfield then
     return
 end
 
--- ============================================================
---  WINDOW
--- ============================================================
 local Window = Rayfield:CreateWindow({
-    Name                   = "Aimbot and ESP Panel",
-    LoadingTitle           = "Aimbot",
-    LoadingSubtitle        = "by c2h6o"
+    Name                   = "Arsenal Aimbot Panel",
+    LoadingTitle           = "Arsenal Aimbot Tools",
+    LoadingSubtitle        = "by _c2h6o._"
     Theme                  = "Default",
     DisableRayfieldPrompts = true,
     DisableBuildWarnings   = true,
 })
 
--- ============================================================
---  STATE
--- ============================================================
 local highlights   = {}
 local fillColor    = Color3.fromRGB(255, 100, 0)
 local outlineColor = Color3.fromRGB(255, 255, 255)
 local fillTrans    = 0.5
 local outlineTrans = 0
 
--- ============================================================
---  TEAM HELPERS
--- ============================================================
+local startTime = os.time()
+
 local function getOwnerTeam()
     if LocalPlayer.Team then return LocalPlayer.Team end
     for _, team in ipairs(Teams:GetTeams()) do
@@ -62,9 +54,6 @@ local function isEnemy(player)
     return player.Team ~= myTeam
 end
 
--- ============================================================
---  HIGHLIGHT HELPERS
--- ============================================================
 local function applyHighlight(player, char)
     local hl = Instance.new("Highlight")
     hl.FillColor           = fillColor
@@ -122,9 +111,75 @@ local function getPlayerNames()
     return #names > 0 and names or {"(No other players)"}
 end
 
--- ============================================================
---  TAB 1 — HIGHLIGHT
--- ============================================================
+local InfoTab = Window:CreateTab("Information", 4483362458)
+
+InfoTab:CreateSection("Session Statistics")
+
+local timeLabel = InfoTab:CreateParagraph({Title = "Time Played", Content = "00h 00m 00s"})
+local fpsLabel = InfoTab:CreateParagraph({Title = "Performance", Content = "FPS: -- | Ping: -- ms"})
+
+InfoTab:CreateSection("Developer Info")
+
+InfoTab:CreateParagraph({Title = "Discord Contact", Content = DISCORD_TAG})
+
+InfoTab:CreateButton({
+    Name = "📋 Copy Discord Username",
+    Callback = function()
+        if setclipboard then
+            setclipboard(DISCORD_TAG)
+            Rayfield:Notify({ Title = "Success", Content = "Copied Discord username to clipboard!", Duration = 3 })
+        else
+            Rayfield:Notify({ Title = "Error", Content = "Your exploit execution environment doesn't support clipboard copying.", Duration = 3 })
+        end
+    end,
+})
+
+task.spawn(function()
+    while task.wait(1) do
+        local elapsed = os.time() - startTime
+        local hours = math.floor(elapsed / 3600)
+        local minutes = math.floor((elapsed % 3600) / 60)
+        local seconds = elapsed % 60
+        
+        pcall(function()
+            timeLabel:Set({
+                Title = "Time Played",
+                Content = string.format("%02dh %02dm %02ds", hours, minutes, seconds)
+            })
+        end)
+    end
+end)
+
+task.spawn(function()
+    local lastUpdate = os.clock()
+    local frameCount = 0
+    
+    RunService.Heartbeat:Connect(function()
+        frameCount = frameCount + 1
+        local now = os.clock()
+        
+        if now - lastUpdate >= 1 then
+            local fps = math.floor(frameCount / (now - lastUpdate))
+            
+            local ping = 0
+            local statsService = game:GetService("Stats")
+            if statsService and statsService:FindFirstChild("Network") then
+                ping = math.floor(statsService.Network.ServerStatsItem["Data Ping"]:GetValue())
+            end
+            
+            pcall(function()
+                fpsLabel:Set({
+                    Title = "Performance",
+                    Content = string.format("FPS: %d | Ping: %d ms", fps, ping)
+                })
+            end)
+            
+            frameCount = 0
+            lastUpdate = now
+        end
+    end)
+end)
+
 local HighlightTab = Window:CreateTab("Highlight", 4483362458)
 
 HighlightTab:CreateSection("Select Player")
@@ -207,9 +262,6 @@ HighlightTab:CreateButton({
     end,
 })
 
--- ============================================================
---  TAB 2 — TEAM DETECTOR
--- ============================================================
 local TeamTab = Window:CreateTab("Team Detector", 4483362458)
 
 TeamTab:CreateSection("Auto-Highlight Enemies")
@@ -307,9 +359,6 @@ TeamTab:CreateButton({
     end,
 })
 
--- ============================================================
---  TAB 3 — APPEARANCE
--- ============================================================
 local AppearanceTab = Window:CreateTab("Appearance", 4483362458)
 
 AppearanceTab:CreateSection("Fill")
@@ -350,9 +399,6 @@ AppearanceTab:CreateSlider({
     Callback     = function(v) outlineTrans = v / 10 refreshColors() end,
 })
 
--- ============================================================
---  TAB 4 — ESP BOXES
--- ============================================================
 local espEnabled  = false
 local espBoxes    = {}
 local espColor    = Color3.fromRGB(255, 0, 0)
@@ -396,12 +442,9 @@ local function createBox(player)
     makeLine(0, 1, 0, 0) -- left
     makeLine(0, 1, 1, 0) -- right
 
-    -- Fix line thickness
     local children = frame:GetChildren()
-    -- top & bottom: full width, 2px tall
     children[1].Size = UDim2.new(1, 0, 0, 2)
     children[2].Size = UDim2.new(1, 0, 0, 2)
-    -- left & right: 2px wide, full height
     children[3].Size = UDim2.new(0, 2, 1, 0)
     children[4].Size = UDim2.new(0, 2, 1, 0)
 
@@ -409,7 +452,7 @@ local function createBox(player)
     nameLabel.BackgroundTransparency = 1
     nameLabel.Size                   = UDim2.new(1, 0, 0, 14)
     nameLabel.Position               = UDim2.new(0, 0, 0, -16)
-    nameLabel.TextColor3             = espColor
+    nameLabel.TextColor3              = espColor
     nameLabel.TextSize               = 13
     nameLabel.Font                   = Enum.Font.GothamBold
     nameLabel.Text                   = player.Name
@@ -420,7 +463,7 @@ local function createBox(player)
     hpLabel.BackgroundTransparency = 1
     hpLabel.Size                   = UDim2.new(1, 0, 0, 14)
     hpLabel.Position               = UDim2.new(0, 0, 1, 2)
-    hpLabel.TextColor3             = Color3.fromRGB(100, 255, 100)
+    hpLabel.TextColor3              = Color3.fromRGB(100, 255, 100)
     hpLabel.TextSize               = 12
     hpLabel.Font                   = Enum.Font.Gotham
     hpLabel.Text                   = "HP: ?"
@@ -444,7 +487,6 @@ RunService.RenderStepped:Connect(function()
         local data = espBoxes[player.Name]
         if not data then continue end
 
-        -- Skip teammates
         if not isEnemy(player) then
             data.frame.Visible = false
             continue
@@ -537,9 +579,6 @@ ESPTab:CreateColorPicker({
     Callback = function(c) espColor = c end,
 })
 
--- ============================================================
---  TAB 5 — FLY  (Q to toggle)
--- ============================================================
 local FlyTab = Window:CreateTab("Fly", 4483362458)
 
 local flying    = false
@@ -641,9 +680,6 @@ FlyTab:CreateSlider({
     Callback     = function(val) flySpeed = val end,
 })
 
--- ============================================================
---  TAB 6 — AIMBOT
--- ============================================================
 local AimbotTab = Window:CreateTab("Aimbot", 4483362458)
 
 local aimbotEnabled   = false
@@ -669,7 +705,6 @@ local function getAimbotTarget()
 
         local aimPoint = hrp.Position + Vector3.new(0, 1.5, 0)
 
-        -- Build exclusion list: all player characters so we dont hit them as walls
         local excludeList = {}
         for _, pl in ipairs(Players:GetPlayers()) do
             if pl.Character then
@@ -678,14 +713,11 @@ local function getAimbotTarget()
         end
         rayParams.FilterDescendantsInstances = excludeList
 
-        -- Cast ray from camera position toward the target
         local origin    = Camera.CFrame.Position
         local direction = (aimPoint - origin)
         local result    = workspace:Raycast(origin, direction, rayParams)
 
-        -- If raycast hit something before reaching the target, they're behind a wall
         if result then
-            -- Something was hit before we reached the player → skip
             continue
         end
 
@@ -758,9 +790,6 @@ AimbotTab:CreateParagraph({
     Content = "Hold Right Click (RMB) to lock onto the nearest enemy within FOV. Release to restore normal camera. Tools and hands stay active.",
 })
 
--- ============================================================
---  TAB 7 — DESTROY UI
--- ============================================================
 local DestroyTab = Window:CreateTab("Destroy UI", 4483362458)
 DestroyTab:CreateSection("Danger Zone")
 
@@ -780,11 +809,8 @@ DestroyTab:CreateButton({
     end,
 })
 
--- ============================================================
---  READY
--- ============================================================
 Rayfield:Notify({
-    Title    = "Owner Panel Ready",
+    Title    = "Aimbot & ESP, Ready.",
     Content  = "Welcome, " .. LocalPlayer.Name .. "! Press Q to toggle fly.",
     Duration = 5,
 })
